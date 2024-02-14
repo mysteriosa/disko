@@ -58,8 +58,13 @@ in
     };
     askPassword = lib.mkOption {
       type = lib.types.bool;
-      default = config.keyFile == null && config.passwordFile == null && (! config.settings ? "keyFile");
+      default = config.keyFile == null && config.passwordFile == null && (! config.settings ? "keyFile") && !config.generatePassword;
       description = "Whether to ask for a password for initial encryption";
+    };
+    generatePassword = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = lib.mdDoc "Whether to generate a 20-word passphrase. Will be saved to the location specified in `passwordFile` or displayed on screen if it is set to null.";
     };
     settings = lib.mkOption {
       default = { };
@@ -127,6 +132,8 @@ in
           done
           set -x
         ''}
+        ${lib.optionalString config.generatePassword ''
+        ''}
         cryptsetup -q luksFormat ${config.device} ${toString config.extraFormatArgs} ${keyFileArgs}
         ${cryptsetupOpen} --persistent
         ${toString (lib.forEach config.additionalKeyFiles (keyFile: ''
@@ -176,7 +183,7 @@ in
       internal = true;
       readOnly = true;
       type = lib.types.functionTo (lib.types.listOf lib.types.package);
-      default = pkgs: [ pkgs.cryptsetup ] ++ (lib.optionals (config.content != null) (config.content._pkgs pkgs));
+      default = pkgs: [ pkgs.cryptsetup pkgs.diceware ] ++ (lib.optionals (config.content != null) (config.content._pkgs pkgs));
       description = "Packages";
     };
   };

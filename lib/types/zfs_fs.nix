@@ -39,6 +39,18 @@
       description = "Path to mount the dataset to";
     };
 
+    passwordFile = lib.mkOption {
+      type = lib.types.nullOr diskoLib.optionTypes.absolute-pathname;
+      default = null;
+      description = "Path to the file which contains the password for initial encryption";
+    };
+
+    generatePassword = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = lib.mdDoc "Whether to generate a 20-word passphrase. Will be saved to the location specified in `passwordFile` or displayed on screen if it is set to null.";
+    };
+
     _parent = lib.mkOption {
       internal = true;
       default = parent;
@@ -59,8 +71,23 @@
       # since (create order != mount order)
       # -p creates parents automatically
       default = ''
+        ${lib.optionalString (config.passwordFile != null) ''
+          export keylocation=${config.passwordFile}
+        ''}
+        ${lib.optionalString config.generatePassword ''
+          ${lib.optional (config.passwordFile == null) "export keylocation=$(mktmp)"}
+          diceware --no-caps -n 20 -d ' '>$keylocation
+        ''}
         zfs create -up ${config._name} \
-          ${lib.concatStringsSep " " (lib.mapAttrsToList (n: v: "-o ${n}=${v}") config.options)}
+          ${lib.concatStringsSep " " (lib.mapAttrsToList (n: v: "-o ${n}=${if (n=="keylocation") && (config.generatePassword || config.passwordFile != null) then "$keylocation" else v}") config.options)}
+        ${lib.optionalString (config.passwordFile != null || config.generatePassword) ''
+          zfs change-key -l -o keylocation=${if (config.options ? "keylocation") then config.options.keylocation else "prompt"} ${config._name}
+          ${lib.optionalString (config.passwordFile==null) ''
+            echo -n "The generated passphrase for ${config._name} is: "
+            cat $keylocation
+            rm $keylocation
+          ''}
+        ''}
       '';
     } // { readOnly = false; };
 
@@ -98,7 +125,7 @@
       internal = true;
       readOnly = true;
       type = lib.types.functionTo (lib.types.listOf lib.types.package);
-      default = pkgs: [ pkgs.util-linux ];
+      default = pkgs: [ pkgs.util-linux pkgs.diceware ];
       description = "Packages";
     };
   };
